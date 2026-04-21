@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Curtis — Music Reactive Logo</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background:#0a0a0a; color:#fff;
+  font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;
+  height:100vh; display:flex; flex-direction:column; overflow:hidden;
+}
+#stage {
+  flex:1; background:#fff; position:relative; overflow:hidden; min-height:0;
+  cursor:crosshair;
+}
+#logo-canvas { display:block; width:100%; height:100%; }
+#text-canvas { display:none; }
+#panel {
+  background:#111; padding:12px 18px;
+  display:flex; flex-direction:column; gap:9px;
+  border-top:1px solid #1e1e1e; flex-shrink:0;
+  overflow-y:auto; max-height:50vh;
+}
+.row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.lbl { font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:#444; min-width:80px; flex-shrink:0; }
+button {
+  font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+  padding:5px 11px; border:1px solid #2a2a2a; border-radius:2px;
+  background:transparent; color:#666; cursor:pointer; transition:all .12s; white-space:nowrap;
+}
+button:hover { border-color:#555; color:#bbb; }
+button.on { background:#fff; color:#000; border-color:#fff; }
+input[type=range] {
+  -webkit-appearance:none; flex:1; height:1px; background:#2a2a2a;
+  border-radius:1px; outline:none; cursor:pointer; min-width:50px;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance:none; width:11px; height:11px; border-radius:50%; background:#fff; cursor:pointer;
+}
+input[type=range]::-moz-range-thumb {
+  width:11px; height:11px; border-radius:50%; background:#fff; border:none; cursor:pointer;
+}
+.val { font-size:10px; color:#555; min-width:28px; text-align:right; font-variant-numeric:tabular-nums; flex-shrink:0; }
+#freq-viz { display:flex; gap:3px; height:22px; align-items:flex-end; }
+.fbar { width:8px; background:#fff; border-radius:1px 1px 0 0; min-height:1px; }
+#status { font-size:10px; color:#3a3a3a; letter-spacing:.04em; flex:1; text-align:right; white-space:nowrap; }
+#file-inp { display:none; }
+.sep { width:1px; height:14px; background:#1e1e1e; flex-shrink:0; margin:0 2px; }
+.ssep { height:1px; background:#1a1a1a; margin:1px 0; }
+.lt {
+  font-size:12px; font-style:italic; font-weight:bold;
+  padding:3px 8px; border:1px solid #222; border-radius:2px;
+  cursor:pointer; color:#444; transition:all .12s; user-select:none;
+}
+.lt.on { background:#fff; color:#000; border-color:#fff; }
+#zoom-hint { font-size:10px; color:#2a2a2a; position:absolute; bottom:8px; right:10px; pointer-events:none; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="logo-canvas"></canvas>
+  <div id="zoom-hint">scroll to zoom · pinch to zoom</div>
+</div>
+<canvas id="text-canvas"></canvas>
+
+<div id="panel">
+
+  <div class="row">
+    <span class="lbl">Source</span>
+    <input type="file" id="file-inp" accept="audio/*"/>
+    <button onclick="document.getElementById('file-inp').click()">Upload song</button>
+    <button id="mic-btn" onclick="toggleMic()">Microphone</button>
+    <button id="demo-btn" class="on" onclick="toggleDemo()">Demo</button>
+    <div class="sep"></div>
+    <span class="lbl" style="min-width:44px">Volume</span>
+    <input type="range" id="vol" min="0" max="100" value="80" style="max-width:80px" oninput="setVolume(this.value)"/>
+    <div class="sep"></div>
+    <div id="freq-viz">
+      <div class="fbar" id="fb0"></div><div class="fbar" id="fb1"></div>
+      <div class="fbar" id="fb2"></div><div class="fbar" id="fb3"></div>
+      <div class="fbar" id="fb4"></div><div class="fbar" id="fb5"></div>
+      <div class="fbar" id="fb6"></div><div class="fbar" id="fb7"></div>
+      <div class="fbar" id="fb8"></div><div class="fbar" id="fb9"></div>
+    </div>
+    <span id="status">demo mode</span>
+  </div>
+
+  <div class="ssep"></div>
+
+  <div class="row">
+    <span class="lbl">Cut mode</span>
+    <button class="on" data-dir="h" onclick="setDir('h',this)">Horizontal</button>
+    <button data-dir="v" onclick="setDir('v',this)">Vertical</button>
+    <button data-dir="d" onclick="setDir('d',this)">Diagonal</button>
+    <button data-dir="c" onclick="setDir('c',this)">Chaos</button>
+    <div class="sep"></div>
+    <span class="lbl" style="min-width:38px">Slices</span>
+    <input type="range" id="sl" min="2" max="30" value="7" oninput="sv('sl','sl-v')"/>
+    <span class="val" id="sl-v">7</span>
+  </div>
+
+  <div class="row">
+    <span class="lbl">Offset</span>
+    <input type="range" id="off" min="0" max="200" value="50" oninput="sv('off','off-v')"/>
+    <span class="val" id="off-v">50</span>
+    <div class="sep"></div>
+    <span class="lbl" style="min-width:30px">Gap</span>
+    <input type="range" id="gap" min="0" max="30" value="3" oninput="sv('gap','gap-v')"/>
+    <span class="val" id="gap-v">3</span>
+    <div class="sep"></div>
+    <span class="lbl" style="min-width:60px">Sensitivity</span>
+    <input type="range" id="sens" min="10" max="300" value="80" oninput="sv('sens','sens-v')"/>
+    <span class="val" id="sens-v">80</span>
+  </div>
+
+  <div class="ssep"></div>
+
+  <div class="row">
+    <span class="lbl">Cut position</span>
+    <input type="range" id="pos" min="-100" max="100" value="0" oninput="sv('pos','pos-v')"/>
+    <span class="val" id="pos-v">0</span>
+    <div class="sep"></div>
+    <span class="lbl" style="min-width:44px">Spread</span>
+    <input type="range" id="spread" min="10" max="200" value="100" oninput="sv('spread','spread-v')"/>
+    <span class="val" id="spread-v">100</span>
+  </div>
+
+  <div class="row">
+    <span class="lbl">Exp. spacing</span>
+    <input type="range" id="exp" min="10" max="400" value="100" oninput="sv('exp','exp-v')"/>
+    <span class="val" id="exp-v">100</span>
+    <div class="sep"></div>
+    <span class="lbl" style="min-width:48px">Rotation</span>
+    <input type="range" id="rot" min="-89" max="89" value="0" oninput="sv('rot','rot-v')"/>
+    <span class="val" id="rot-v">0°</span>
+    <div class="sep"></div>
+    <span class="lbl" style="min-width:38px">Anchor</span>
+    <div id="anchor-pad" title="Drag to set rotation anchor point"
+      style="width:52px;height:52px;border:1px solid #2a2a2a;border-radius:2px;
+             position:relative;cursor:crosshair;flex-shrink:0;background:#0d0d0d;overflow:hidden;">
+      <div style="position:absolute;left:50%;top:0;width:1px;height:100%;background:#1e1e1e;pointer-events:none;"></div>
+      <div style="position:absolute;left:0;top:50%;width:100%;height:1px;background:#1e1e1e;pointer-events:none;"></div>
+      <div style="position:absolute;left:2px;top:2px;width:3px;height:3px;border-radius:50%;background:#2a2a2a;pointer-events:none;"></div>
+      <div style="position:absolute;right:2px;top:2px;width:3px;height:3px;border-radius:50%;background:#2a2a2a;pointer-events:none;"></div>
+      <div style="position:absolute;left:2px;bottom:2px;width:3px;height:3px;border-radius:50%;background:#2a2a2a;pointer-events:none;"></div>
+      <div style="position:absolute;right:2px;bottom:2px;width:3px;height:3px;border-radius:50%;background:#2a2a2a;pointer-events:none;"></div>
+      <div id="anchor-dot" style="width:9px;height:9px;border-radius:50%;background:#fff;
+             position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+             pointer-events:none;box-shadow:0 0 0 1px #000;"></div>
+    </div>
+    <span class="val" id="anchor-v" style="min-width:52px">50%, 50%</span>
+  </div>
+
+  <div class="row">
+    <span class="lbl">Zoom</span>
+    <input type="range" id="zoom" min="50" max="400" value="100" oninput="setZoom(this.value)"/>
+    <span class="val" id="zoom-v">100%</span>
+    <div class="sep"></div>
+    <button onclick="resetZoom()">Reset zoom</button>
+  </div>
+
+  <div class="ssep"></div>
+
+  <div class="row">
+    <span class="lbl">Per-letter</span>
+    <div class="lt on" data-i="0" onclick="togLetter(this)">C</div>
+    <div class="lt on" data-i="1" onclick="togLetter(this)">u</div>
+    <div class="lt on" data-i="2" onclick="togLetter(this)">r</div>
+    <div class="lt on" data-i="3" onclick="togLetter(this)">t</div>
+    <div class="lt on" data-i="4" onclick="togLetter(this)">i</div>
+    <div class="lt on" data-i="5" onclick="togLetter(this)">s</div>
+  </div>
+
+</div>
+
+<script>
+// ── SVG paths (viewBox 0 0 1920 1080, glyphs ~610..1310, 400..660) ────────────
+const SVG_PATHS = `
+<path d="M717.9,483.6c21.3,0,30.8,10.7,36.6,29.2h46.8c-9.1-46.3-40.2-68.4-82.6-68.4s-88.7,36.8-88.7,92.3,33,92.8,86.4,92.8,78.8-27.4,84.9-70.4h-3c-24.1,0-38.4,5.8-48.8,17.3-7.6,8.4-19.6,14-31,14-29.7,0-40.9-24.1-40.9-53.6s11.9-53.1,40.4-53.1Z"/>
+<path d="M890.1,498.8v1.8c1.3,5.1,2,7.6,2.5,11.2.8,3.8,1.3,7.1,1.5,10.9,0,3.8.3,18.3.3,13.2v33.5c0,15-9.1,24.1-22.4,24.1s-18.8-7.4-18.8-20.3v-74.5h-46v1.8c1.3,5.1,2,7.6,2.5,11.2.8,3.8,1.3,7.1,1.5,10.9,0,3.8.3,18.3.3,13.2v44c0,31.8,14.5,48.8,43.7,48.8s30.5-13.2,35.1-32h5.1c0,15,9.1,29.2,36.8,29.2h3.8v-127.1h-46Z"/>
+<path d="M1025.2,496.8c-8.9,0-16.3.8-22.4,6.4-4.8,4.8-8.9,13.7-10.2,24.9h-5.1c0-18.6-15.2-29.2-33.5-29.2h-7.4v127.1h46v-1.8c-1.3-4.8-2-7.6-2.5-11.2-.8-3.8-1.3-7.1-1.5-10.9,0-3.8-.3-18.3-.3-13.2v-11.7c0-11.9,3-21.6,5.6-26.7,2.5-5.1,6.4-8.9,11.4-11.4,4.8-2.5,11.2-3.8,18.3-3.8h9.9v-37.6c-1.3-.3-2.8-.5-4.1-.5-1.3-.3-2.8-.3-4.3-.3Z"/>
+<path d="M1083.2,497.5v-31h-41.7v113.3c0,31.8,10.7,48.8,39.9,48.8s29-11.4,28.7-29c-20.1,0-26.9-7.4-26.9-20.3v-47.3c0-.8.5-1.3,1.3-1.3h25.9v-32h-25.9c-.8,0-1.3-.5-1.3-1.3Z"/>
+<path d="M1161,602c0-3.8-.3-18.3-.3-13.2v-48.8c0-23.1-18.6-41.9-41.7-41.9v90.7c0-5.1-.3,9.4-.3,13.2-.3,3.8-.8,7.1-1.5,10.9-.5,3.6-1.3,6.1-2.5,11.2v1.8h50.3v-1.8c-1.3-5.1-2-7.6-2.5-11.2-.8-3.8-1.3-7.1-1.5-10.9Z"/>
+<path d="M1140.2,453.6c-13.7,3.6-24.9,15.5-24.9,26.4s11.2,16.8,24.9,13.2c13.7-3.8,25.2-15.8,25.2-26.7s-11.4-16.8-25.2-13Z"/>
+<path d="M1245,546.3l-17.5-2.5c-8.1-1.3-18.6-2.8-18.6-11.7s9.7-12.2,18.3-12.2,21.1,1,27.4,17.8h31.8c-1-29.2-24.4-42.7-59.2-42.7s-57.7,10.9-57.7,40.2,20.1,36.6,43.2,39.6l20.6,2.8c7.6,1,16.3,2.5,16.3,11.7s-10.4,13-19.8,13-14-2.3-19.3-8.9c-4.8-5.8-11.9-7.1-37.9-9.7l-5.3-.5c2.5,33.3,27.2,44.7,61.2,44.7s61.5-10.4,61.5-42.4-21.6-35.8-45-39.1Z"/>
+`;
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let audioCtx, analyser, gainNode, srcNode, dataArr, streamTracks = [];
+let rafId, demoOn = true, micOn = false, demoT = 0;
+let dir = 'h';
+let letOn = [true,true,true,true,true,true];
+let bands = new Array(10).fill(0);
+let zoom = 1.0;  // zoom multiplier
+let anchorX = 0.5, anchorY = 0.5;
+
+// Chaos polygons — regenerated when slice count changes or mode switches to chaos
+let chaosPolygons = [];
+let chaosSliceCount = 0;
+
+// ── Canvases ──────────────────────────────────────────────────────────────────
+const stage   = document.getElementById('stage');
+const mainC   = document.getElementById('logo-canvas');
+const mainCtx = mainC.getContext('2d');
+const txtC    = document.getElementById('text-canvas');
+const txtCtx  = txtC.getContext('2d');
+
+const LOGO_EXTRA = 800;  // px of padding around logo in txtC
+
+let logoOffX = 0, logoOffY = 0, logoRenderW = 0, logoRenderH = 0;
+let logoLoaded = false;
+
+// ── Build logo image ──────────────────────────────────────────────────────────
+function buildLogoImage(w, h) {
+  // Tight viewBox around actual glyphs in SVG coordinate space
+  // Glyphs span approx x:628–1290, y:415–628 — add margin
+  const vbX = 608, vbY = 395, vbW = 710, vbH = 260;
+
+  const padPx  = Math.round(Math.min(w, h) * 0.08);
+  const availW = w - padPx * 2;
+  const availH = h - padPx * 2;
+  const scale  = Math.min(availW / vbW, availH / vbH) * zoom;
+
+  logoRenderW = Math.round(vbW * scale);
+  logoRenderH = Math.round(vbH * scale);
+  logoOffX    = Math.round((w - logoRenderW) / 2);
+  logoOffY    = Math.round((h - logoRenderH) / 2);
+
+  const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbX} ${vbY} ${vbW} ${vbH}" width="${logoRenderW}" height="${logoRenderH}"><g fill="#231f20">${SVG_PATHS}</g></svg>`;
+  const blob = new Blob([svgStr], { type:'image/svg+xml' });
+  const url  = URL.createObjectURL(blob);
+  const img  = new Image();
+  img.onload = () => {
+    txtC.width  = logoRenderW + LOGO_EXTRA * 2;
+    txtC.height = logoRenderH + LOGO_EXTRA * 2;
+    txtCtx.fillStyle = '#fff';
+    txtCtx.fillRect(0, 0, txtC.width, txtC.height);
+    txtCtx.drawImage(img, LOGO_EXTRA, LOGO_EXTRA, logoRenderW, logoRenderH);
+    URL.revokeObjectURL(url);
+    logoLoaded = true;
+    // Regenerate chaos polygons when logo size changes
+    if (dir === 'c') generateChaosPolygons();
+  };
+  img.src = url;
+}
+
+// ── Resize ────────────────────────────────────────────────────────────────────
+function resize() {
+  mainC.width  = stage.clientWidth;
+  mainC.height = stage.clientHeight;
+  logoLoaded = false;
+  buildLogoImage(mainC.width, mainC.height);
+}
+window.addEventListener('resize', resize);
+
+// ── Zoom ──────────────────────────────────────────────────────────────────────
+function setZoom(val) {
+  zoom = val / 100;
+  document.getElementById('zoom-v').textContent = val + '%';
+  logoLoaded = false;
+  buildLogoImage(mainC.width, mainC.height);
+}
+function resetZoom() {
+  zoom = 1;
+  document.getElementById('zoom').value = 100;
+  document.getElementById('zoom-v').textContent = '100%';
+  logoLoaded = false;
+  buildLogoImage(mainC.width, mainC.height);
+}
+
+// Scroll wheel zoom
+stage.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -5 : 5;
+  const slider = document.getElementById('zoom');
+  const newVal = Math.max(50, Math.min(400, parseInt(slider.value) + delta));
+  slider.value = newVal;
+  setZoom(newVal);
+}, { passive: false });
+
+// Pinch-to-zoom
+let pinchDist0 = null, pinchZoom0 = null;
+stage.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 2) {
+    pinchDist0 = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    pinchZoom0 = zoom;
+  }
+}, { passive: true });
+stage.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2 && pinchDist0) {
+    const dist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    const newZoom = Math.max(0.5, Math.min(4, pinchZoom0 * dist / pinchDist0));
+    const newVal  = Math.round(newZoom * 100);
+    document.getElementById('zoom').value = newVal;
+    setZoom(newVal);
+  }
+}, { passive: true });
+stage.addEventListener('touchend', () => { pinchDist0 = null; });
+
+// ── Chaos polygon generation ──────────────────────────────────────────────────
+// We generate N random convex-ish polygons that together tile the logo bounding area.
+// Strategy: place N random seed points in the logo rect, compute a Voronoi-like
+// partition using a simple scanline approach — each pixel row is split by the seeds
+// projected onto it. For performance we do this at the slice level, not per-pixel.
+// We use a simpler approach: random line segments that criss-cross the canvas,
+// creating irregular polygons similar to the reference image (shattered glass).
+
+function seededRand(seed) {
+  // Simple deterministic PRNG so chaos is stable per slice-count
+  let s = seed;
+  return () => {
+    s = (s * 1664525 + 1013904223) & 0xffffffff;
+    return (s >>> 0) / 0xffffffff;
+  };
+}
+
+function generateChaosPolygons() {
+  const W = mainC.width, H = mainC.height;
+  const N = parseInt(document.getElementById('sl').value);
+  chaosSliceCount = N;
+
+  const rand = seededRand(N * 12345);
+
+  // Sutherland-Hodgman polygon clip against one half-plane
+  function clipPoly(poly, a, b, c, sign) {
+    const out = [];
+    for (let i = 0; i < poly.length; i++) {
+      const p1 = poly[i], p2 = poly[(i + 1) % poly.length];
+      const d1 = sign * (a * p1.x + b * p1.y - c);
+      const d2 = sign * (a * p2.x + b * p2.y - c);
+      if (d1 >= 0) out.push(p1);
+      if ((d1 >= 0) !== (d2 >= 0)) {
+        const t = d1 / (d1 - d2);
+        out.push({ x: p1.x + t*(p2.x-p1.x), y: p1.y + t*(p2.y-p1.y) });
+      }
+    }
+    return out;
+  }
+
+  // Shrink a convex polygon inward by `px` pixels (for gap effect)
+  function shrinkPoly(poly, px) {
+    if (px <= 0 || poly.length < 3) return poly;
+    // Find centroid
+    let cx = 0, cy = 0;
+    poly.forEach(p => { cx += p.x; cy += p.y; });
+    cx /= poly.length; cy /= poly.length;
+    // Move each vertex toward centroid by px
+    return poly.map(p => {
+      const dx = p.x - cx, dy = p.y - cy;
+      const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+      const shrink = Math.min(px, dist * 0.45);
+      return { x: p.x - (dx/dist)*shrink, y: p.y - (dy/dist)*shrink };
+    });
+  }
+
+  // Generate exactly N random lines through the canvas
+  const lines = [];
+  for (let i = 0; i < N; i++) {
+    const cx = W * (0.05 + rand() * 0.9);
+    const cy = H * (0.05 + rand() * 0.9);
+    const angle = rand() * Math.PI;
+    const nx = Math.sin(angle), ny = -Math.cos(angle);
+    lines.push({ a: nx, b: ny, c: nx*cx + ny*cy });
+  }
+
+  // BSP: recursively split the canvas rect by each line
+  const ext = 400;
+  const universe = [
+    {x:-ext,y:-ext},{x:W+ext,y:-ext},{x:W+ext,y:H+ext},{x:-ext,y:H+ext}
+  ];
+
+  function splitRec(poly, idx) {
+    if (poly.length < 3) return [];
+    if (idx >= lines.length) return [poly];
+    const {a, b, c} = lines[idx];
+    const above = clipPoly(poly, a, b, c,  1);
+    const below = clipPoly(poly, a, b, c, -1);
+    // Only recurse the half that has area; stop early to avoid 2^N explosion
+    const leftPolys  = above.length >= 3 ? splitRec(above, idx + 1) : [];
+    const rightPolys = below.length >= 3 ? splitRec(below, idx + 1) : [];
+    return [...leftPolys, ...rightPolys];
+  }
+
+  const raw = splitRec(universe, 0).filter(p => p.length >= 3);
+
+  // Store raw polys and pre-shrunk versions for gap rendering
+  // gapPx applied at draw time so we keep raw too
+  chaosPolygons = raw;
+}
+
+// ── Slice position helpers ────────────────────────────────────────────────────
+function slicePositions(N, posVal, spreadVal, expVal) {
+  const positions = [];
+  for (let i = 0; i < N; i++) {
+    let t = (N === 1) ? 0.5 : i / (N - 1);
+    t = Math.pow(t, expVal / 100);
+    t = 0.5 + (t - 0.5) * (spreadVal / 100);
+    t = t + (posVal / 100) * 0.5;
+    positions.push(t);
+  }
+  return positions;
+}
+
+// ── Draw ──────────────────────────────────────────────────────────────────────
+function draw() {
+  if (!logoLoaded) return;
+
+  const W = mainC.width, H = mainC.height;
+  mainCtx.fillStyle = '#fff';
+  mainCtx.fillRect(0, 0, W, H);
+
+  // base draw position: maps txtC so logo pixel LOGO_EXTRA,LOGO_EXTRA → logoOffX,logoOffY on mainC
+  const baseX = logoOffX - LOGO_EXTRA;
+  const baseY = logoOffY - LOGO_EXTRA;
+
+  const slices    = parseInt(document.getElementById('sl').value);
+  const offsetPx  = parseInt(document.getElementById('off').value);
+  const gapPx     = parseInt(document.getElementById('gap').value);
+  const sens      = parseInt(document.getElementById('sens').value) / 100;
+  const posVal    = parseInt(document.getElementById('pos').value);
+  const spreadVal = parseInt(document.getElementById('spread').value);
+  const expVal    = parseInt(document.getElementById('exp').value);
+  const rotDeg    = parseInt(document.getElementById('rot').value);
+  const rotRad    = rotDeg * Math.PI / 180;
+  const slope     = Math.tan(rotRad);
+  const pivotX    = anchorX * W;
+  const pivotY    = anchorY * H;
+
+  const N  = slices;
+  const bp = slicePositions(N + 1, posVal, spreadVal, expVal);
+  const PAD = LOGO_EXTRA;
+
+  if (dir === 'h') {
+    for (let i = 0; i < N; i++) {
+      const t      = (bp[i] + bp[i+1]) / 2;
+      const li     = Math.min(Math.floor(Math.max(0, t) * 6), 5);
+      const energy = getLetterEnergy(li);
+      const sign   = (i % 2 === 0) ? 1 : -1;
+      const dx     = sign * energy * offsetPx * sens;
+
+      const topAtPivot    = bp[i]     * H;
+      const bottomAtPivot = bp[i+1]   * H - gapPx;
+      const yTop    = (x) => topAtPivot    + slope * (x - pivotX);
+      const yBottom = (x) => bottomAtPivot + slope * (x - pivotX);
+
+      mainCtx.save();
+      mainCtx.beginPath();
+      mainCtx.moveTo(-PAD,    yTop(-PAD));
+      mainCtx.lineTo(W+PAD,   yTop(W+PAD));
+      mainCtx.lineTo(W+PAD,   yBottom(W+PAD));
+      mainCtx.lineTo(-PAD,    yBottom(-PAD));
+      mainCtx.closePath();
+      mainCtx.clip();
+      mainCtx.drawImage(txtC, baseX + dx, baseY);
+      mainCtx.restore();
+    }
+
+  } else if (dir === 'v') {
+    for (let i = 0; i < N; i++) {
+      const t      = (bp[i] + bp[i+1]) / 2;
+      const li     = Math.min(Math.floor(Math.max(0, t) * 6), 5);
+      const energy = getLetterEnergy(li);
+      const sign   = (i % 2 === 0) ? 1 : -1;
+      const dy     = sign * energy * offsetPx * sens;
+
+      const leftAtPivot  = bp[i]     * W;
+      const rightAtPivot = bp[i+1]   * W - gapPx;
+      const xLeft  = (y) => leftAtPivot  + slope * (y - pivotY);
+      const xRight = (y) => rightAtPivot + slope * (y - pivotY);
+
+      mainCtx.save();
+      mainCtx.beginPath();
+      mainCtx.moveTo(xLeft(-PAD),    -PAD);
+      mainCtx.lineTo(xRight(-PAD),   -PAD);
+      mainCtx.lineTo(xRight(H+PAD),  H+PAD);
+      mainCtx.lineTo(xLeft(H+PAD),   H+PAD);
+      mainCtx.closePath();
+      mainCtx.clip();
+      mainCtx.drawImage(txtC, baseX, baseY + dy);
+      mainCtx.restore();
+    }
+
+  } else if (dir === 'd') {
+    const shear     = 0.28 + slope;
+    const totalSpan = H + Math.abs(shear) * W + PAD * 2;
+
+    for (let i = 0; i < N; i++) {
+      const t      = (bp[i] + bp[i+1]) / 2;
+      const li     = Math.min(Math.floor(Math.max(0, t) * 6), 5);
+      const energy = getLetterEnergy(li);
+      const sign   = (i % 2 === 0) ? 1 : -1;
+      const dx     = sign * energy * offsetPx * sens;
+
+      const topBase    = bp[i]   * totalSpan - Math.abs(shear) * W * 0.5 - PAD;
+      const bottomBase = bp[i+1] * totalSpan - Math.abs(shear) * W * 0.5 - PAD - gapPx;
+      const yTop    = (x) => topBase    + shear * (x - pivotX);
+      const yBottom = (x) => bottomBase + shear * (x - pivotX);
+
+      mainCtx.save();
+      mainCtx.beginPath();
+      mainCtx.moveTo(-PAD,    yTop(-PAD));
+      mainCtx.lineTo(W+PAD,   yTop(W+PAD));
+      mainCtx.lineTo(W+PAD,   yBottom(W+PAD));
+      mainCtx.lineTo(-PAD,    yBottom(-PAD));
+      mainCtx.closePath();
+      mainCtx.clip();
+      mainCtx.drawImage(txtC, baseX + dx, baseY);
+      mainCtx.restore();
+    }
+
+  } else if (dir === 'c') {
+    // Chaos mode — irregular polygons, each shifts in a random direction driven by audio
+    if (chaosPolygons.length === 0 || chaosSliceCount !== slices) generateChaosPolygons();
+
+    // Shrink polygons inward by gapPx to create visible gaps between pieces
+    function shrinkPoly(poly, px) {
+      if (px <= 0 || poly.length < 3) return poly;
+      let cx = 0, cy = 0;
+      poly.forEach(p => { cx += p.x; cy += p.y; });
+      cx /= poly.length; cy /= poly.length;
+      return poly.map(p => {
+        const dx = p.x - cx, dy = p.y - cy;
+        const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+        const s = Math.min(px, dist * 0.45);
+        return { x: p.x - (dx/dist)*s, y: p.y - (dy/dist)*s };
+      });
+    }
+
+    const rand = seededRand(slices * 9999);
+
+    chaosPolygons.forEach((rawPoly, i) => {
+      const li     = Math.min(Math.floor(rand() * 6), 5);
+      const energy = getLetterEnergy(li);
+      const angle  = rand() * Math.PI * 2;
+      const dx     = Math.cos(angle) * energy * offsetPx * sens;
+      const dy     = Math.sin(angle) * energy * offsetPx * sens;
+
+      const poly = shrinkPoly(rawPoly, gapPx);
+
+      mainCtx.save();
+      mainCtx.beginPath();
+      mainCtx.moveTo(poly[0].x, poly[0].y);
+      for (let j = 1; j < poly.length; j++) mainCtx.lineTo(poly[j].x, poly[j].y);
+      mainCtx.closePath();
+      mainCtx.clip();
+      mainCtx.drawImage(txtC, baseX + dx, baseY + dy);
+      mainCtx.restore();
+    });
+  }
+}
+
+// ── Frequency helpers ─────────────────────────────────────────────────────────
+function getFreqBands(arr) {
+  const N = arr.length;
+  function avg(s, e) { let sum=0; for(let i=s;i<e&&i<N;i++) sum+=arr[i]; return sum/(e-s)/255; }
+  return [avg(0,2),avg(2,5),avg(5,10),avg(10,18),avg(18,30),avg(30,50),avg(50,75),avg(75,100),avg(100,114),avg(114,128)];
+}
+
+const LETTER_BAND = [1, 2, 3, 4, 5, 7];
+function getLetterEnergy(li) {
+  if (!letOn[li]) return 0;
+  return Math.min(1, bands[LETTER_BAND[li]]);
+}
+
+function updateFreqBars() {
+  bands.forEach((v, i) => {
+    const el = document.getElementById('fb' + i);
+    if (el) el.style.height = Math.round(v * 20) + 'px';
+  });
+}
+
+// ── Animation loops ───────────────────────────────────────────────────────────
+function liveLoop() {
+  if (!analyser) return;
+  analyser.getByteFrequencyData(dataArr);
+  bands = getFreqBands(dataArr);
+  updateFreqBars(); draw();
+  rafId = requestAnimationFrame(liveLoop);
+}
+
+function demoLoop() {
+  if (!demoOn) return;
+  demoT += 0.032;
+  const T = demoT;
+  bands = [
+    Math.abs(Math.sin(T*1.05))*0.95, Math.abs(Math.sin(T*1.05))*0.90,
+    Math.abs(Math.sin(T*1.5+0.4))*0.75, Math.abs(Math.sin(T*2.1+0.8))*0.65,
+    Math.abs(Math.sin(T*3.0+0.3))*0.55, Math.abs(Math.sin(T*4.2+1.1))*0.42,
+    Math.abs(Math.sin(T*5.8+0.6))*0.32, Math.abs(Math.sin(T*7.5+1.4))*0.25,
+    Math.abs(Math.sin(T*9.2+0.2))*0.18, Math.abs(Math.sin(T*11.0+1.7))*0.12,
+  ];
+  updateFreqBars(); draw();
+  rafId = requestAnimationFrame(demoLoop);
+}
+
+// ── Controls ──────────────────────────────────────────────────────────────────
+function sv(rid, vid) {
+  const v = document.getElementById(rid).value;
+  document.getElementById(vid).textContent = rid === 'rot' ? v + '°' : v;
+}
+
+function setVolume(val) { if (gainNode) gainNode.gain.value = val / 100; }
+
+function setDir(d, btn) {
+  dir = d;
+  document.querySelectorAll('[data-dir]').forEach(b => b.classList.remove('on'));
+  btn.classList.add('on');
+  if (d === 'c') generateChaosPolygons();
+}
+
+function togLetter(el) {
+  const i = parseInt(el.dataset.i);
+  letOn[i] = !letOn[i];
+  el.classList.toggle('on', letOn[i]);
+}
+
+// Anchor pad
+(function initAnchorPad() {
+  const pad = document.getElementById('anchor-pad');
+  const dot = document.getElementById('anchor-dot');
+  const lbl = document.getElementById('anchor-v');
+  let dragging = false;
+  function update(e) {
+    const r = pad.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    anchorX = Math.max(0, Math.min(1, (cx - r.left) / r.width));
+    anchorY = Math.max(0, Math.min(1, (cy - r.top)  / r.height));
+    dot.style.left = (anchorX * 100) + '%';
+    dot.style.top  = (anchorY * 100) + '%';
+    lbl.textContent = Math.round(anchorX*100) + '%, ' + Math.round(anchorY*100) + '%';
+  }
+  pad.addEventListener('mousedown',  e => { dragging=true; update(e); e.preventDefault(); });
+  pad.addEventListener('touchstart', e => { dragging=true; update(e); e.preventDefault(); }, {passive:false});
+  window.addEventListener('mousemove',  e => { if(dragging) update(e); });
+  window.addEventListener('touchmove',  e => { if(dragging) update(e); }, {passive:false});
+  window.addEventListener('mouseup',    () => { dragging=false; });
+  window.addEventListener('touchend',   () => { dragging=false; });
+})();
+
+function stopAll() {
+  demoOn=false; micOn=false;
+  if(rafId) cancelAnimationFrame(rafId);
+  if(srcNode&&srcNode.stop) try{srcNode.stop();}catch(e){}
+  streamTracks.forEach(t=>t.stop()); streamTracks=[];
+  if(audioCtx) try{audioCtx.close();}catch(e){}
+  audioCtx=analyser=gainNode=srcNode=dataArr=null;
+  bands=new Array(10).fill(0);
+  document.getElementById('mic-btn').classList.remove('on');
+  document.getElementById('demo-btn').classList.remove('on');
+}
+
+function toggleDemo() {
+  if(demoOn){stopAll();document.getElementById('status').textContent='stopped';draw();return;}
+  stopAll(); demoOn=true;
+  document.getElementById('demo-btn').classList.add('on');
+  document.getElementById('status').textContent='demo mode';
+  demoLoop();
+}
+
+async function toggleMic() {
+  if(micOn){stopAll();document.getElementById('status').textContent='mic off';return;}
+  try {
+    stopAll();
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended') await audioCtx.resume();
+    analyser=audioCtx.createAnalyser(); analyser.fftSize=256;
+    dataArr=new Uint8Array(analyser.frequencyBinCount);
+    const stream=await navigator.mediaDevices.getUserMedia({audio:true,video:false});
+    streamTracks=stream.getAudioTracks();
+    srcNode=audioCtx.createMediaStreamSource(stream);
+    srcNode.connect(analyser);
+    micOn=true;
+    document.getElementById('mic-btn').classList.add('on');
+    document.getElementById('status').textContent='mic active';
+    liveLoop();
+  } catch(e) { document.getElementById('status').textContent='mic error: '+e.message; }
+}
+
+document.getElementById('file-inp').addEventListener('change', async function(e) {
+  const file=e.target.files[0]; if(!file) return;
+  stopAll(); document.getElementById('status').textContent='loading…';
+  try {
+    audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+    if(audioCtx.state==='suspended') await audioCtx.resume();
+    analyser=audioCtx.createAnalyser(); analyser.fftSize=256;
+    dataArr=new Uint8Array(analyser.frequencyBinCount);
+    gainNode=audioCtx.createGain();
+    gainNode.gain.value=document.getElementById('vol').value/100;
+    const buf=await file.arrayBuffer();
+    const decoded=await audioCtx.decodeAudioData(buf);
+    srcNode=audioCtx.createBufferSource(); srcNode.buffer=decoded;
+    srcNode.connect(analyser); analyser.connect(gainNode); gainNode.connect(audioCtx.destination);
+    srcNode.start();
+    // Ensure context is running after start (some browsers need this)
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    srcNode.onended=()=>{document.getElementById('status').textContent='ended';};
+    document.getElementById('status').textContent='▶ '+file.name;
+    liveLoop();
+  } catch(e) { document.getElementById('status').textContent='error: '+e.message; }
+});
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  resize();
+  setTimeout(() => { demoLoop(); }, 400);
+});
+</script>
+</body>
+</html>
